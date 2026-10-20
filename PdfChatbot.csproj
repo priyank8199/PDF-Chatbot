@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PDF page-by-page text extraction -->
+    <PackageReference Include="PdfPig" Version="0.1.*" />
+    <!-- PostgreSQL + pgvector (brings in Npgsql) -->
+    <PackageReference Include="Pgvector" Version="0.3.*" />
+  </ItemGroup>
+
+</Project>

@@ -1,244 +1,258 @@
-# \# PDF Chatbot with .NET (100% Local RAG)
+# PDF Chatbot with .NET — 100% Local RAG
+
+Upload a PDF, ask questions in plain English, and get answers with citations to the exact source file and page.
+
+**Everything runs locally on your machine — no API keys, no cloud services, and no monthly API bills.**
+
+## Features
+
+- **Cited answers:** Answers include source citations, such as `[Brightpath-Employee-Handbook.pdf, page 3]`.
+- **Grounded responses:** If the answer cannot be found in your documents, the chatbot responds with `"I couldn't find that in your documents."`
+- **Streaming responses:** Answers appear incrementally using Server-Sent Events (SSE).
+- **Prompt-injection hardening:** Instructions embedded in PDFs are treated as untrusted document content, not as commands.
+- **Fully local AI:** Uses Ollama for embeddings and chat generation, with PostgreSQL and pgvector for vector search.
+- **Dockerized infrastructure:** Runs PostgreSQL with pgvector and pgAdmin through Docker Compose.
+- **Browser-based interface:** Upload PDFs and chat with your documents through a simple HTML and JavaScript frontend.
+- **No external AI APIs:** Your documents are processed locally without sending them to a hosted AI service.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | .NET 10, ASP.NET Core Minimal APIs, C# |
+| PDF parsing | PdfPig |
+| Embeddings | Ollama, `nomic-embed-text` (768 dimensions) |
+| Chat model | Ollama, `gemma4` or `llama3.2` |
+| Vector database | PostgreSQL 17, pgvector |
+| Vector indexing | HNSW index with cosine distance |
+| Data access | Npgsql, Pgvector for .NET |
+| Frontend | HTML, CSS, JavaScript, EventSource |
+| Streaming | Server-Sent Events (SSE) |
+| Infrastructure | Docker Compose |
+| Database administration | pgAdmin |
+
+## How It Works
+
+This application uses **Retrieval-Augmented Generation (RAG)**. Instead of passing an entire PDF to the language model, it retrieves the most relevant document chunks and provides them as context for generating an answer.
+
+### Document ingestion
+
+```text
+PDF Upload
+    |
+    v
+Extract Text by Page (PdfPig)
+    |
+    v
+Split Text into Overlapping Chunks
+    |
+    v
+Generate Embeddings (Ollama)
+    |
+    v
+Store Chunks and Vectors in PostgreSQL
+```
+
+### Question answering
+
+```text
+User Question
+    |
+    v
+Generate Question Embedding
+    |
+    v
+Retrieve Top 5 Relevant Chunks
+    |
+    v
+Build Prompt with Source Metadata
+    |
+    v
+Generate Answer with Ollama
+    |
+    v
+Stream Answer and Page Citations via SSE
+```
+
+### API endpoints
+
+| Operation | Endpoint | Description |
+|---|---|---|
+| Upload a PDF | `POST /api/documents` | Extracts page text, splits it into chunks, generates embeddings, and stores the chunks in pgvector. |
+| Ask a question | `GET /api/ask?question=...` | Embeds the question, retrieves the five most relevant chunks using cosine similarity, and streams a grounded answer through SSE. |
 
-# 
+## Project Structure
 
-# Upload a PDF, ask questions in plain English, and get answers that cite the exact file and page.
+```text
+PdfChatbot/
+├── Program.cs                 # Application startup, dependency injection,
+│                              # database configuration, static files, and endpoints
+├── DocumentEndpoints.cs       # PDF upload, extraction, chunking, embedding, and storage
+├── ChatEndpoints.cs           # Retrieval, prompt construction, and SSE chat responses
+├── OllamaClient.cs            # Ollama REST client for embeddings and streaming chat
+├── VectorStore.cs              # pgvector schema operations, inserts, and similarity search
+├── Chunker.cs                  # Text chunking with overlap
+├── wwwroot/
+│   └── index.html              # PDF upload and streaming chat interface
+├── appsettings.json            # Database connection, Ollama URL, and model settings
+├── compose.yaml                # PostgreSQL/pgvector and pgAdmin services
+├── db/
+│   ├── init.sql                # Enables the PostgreSQL vector extension
+│   └── pgadmin-servers.json    # Preconfigures the database in pgAdmin
+└── docs/
+    ├── Brightpath-Employee-Handbook.pdf
+    └── Falcon-Office-Supplies-Price-List-Q4-2026.pdf
+                                 # Sample document containing a prompt-injection test
+```
 
-# Everything runs on your own machine: \*\*no API keys, no cloud, no monthly bill.\*\*
+## Getting Started
 
-# 
+### Prerequisites
 
-# A .NET 10 \*"Build a PDF Chatbot with Spring AI (100% Local)"\*.
+Install the following:
 
-# 
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [Ollama](https://ollama.com)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
-# \## Features
+Ensure Docker Desktop is running before starting the database services.
 
-# 
+### 1. Download the AI models
 
-# \- \*\*Cited answers:\*\* every fact ends with its source, e.g. `\[Brightpath-Employee-Handbook.pdf, page 3]`
+Pull the chat and embedding models using Ollama:
 
-# \- \*\*No guessing:\*\* replies \*"I couldn't find that in your documents."\* when the answer isn't in the PDFs
+```bash
+ollama pull gemma4
+ollama pull nomic-embed-text
+```
 
-# \- \*\*Streaming:\*\* answers appear word by word via Server-Sent Events (SSE)
+The embedding model, `nomic-embed-text`, produces 768-dimensional vectors.
 
-# \- \*\*Prompt-injection hardening:\*\* instructions hidden inside a PDF are treated as data, not commands
+**Running on a low-memory machine?**
 
-# \- \*\*Fully local:\*\* Ollama for the models, PostgreSQL + pgvector for search, all in Docker / on your laptop
+You can try a smaller chat model:
 
-# \- \*\*pgAdmin included:\*\* browse the stored chunks in your browser
+```bash
+ollama pull llama3.2
+```
 
-# 
+Then update the chat model setting in `appsettings.json`:
 
-# \## Tech stack
+```json
+{
+  "ChatModel": "llama3.2"
+}
+```
 
-# 
+Merge this setting into your existing configuration rather than replacing other required settings.
 
-# | Layer | Technology |
+### 2. Start PostgreSQL and pgAdmin
 
-# |---|---|
+From the project root, run:
 
-# | Backend | .NET 10, ASP.NET Core Minimal APIs, C# |
+```bash
+docker compose up -d
+```
 
-# | PDF parsing | PdfPig |
+This starts the PostgreSQL database with pgvector and the pgAdmin interface, as configured in `compose.yaml`.
 
-# | Embeddings | Ollama + `nomic-embed-text` (768 dimensions) |
+Check the service status:
 
-# | Chat model | Ollama + `gemma4` (or `llama3.2` for low-RAM machines) |
+```bash
+docker compose ps
+```
 
-# | Vector database | PostgreSQL 17 + pgvector (HNSW index, cosine distance) |
+### 3. Run the application
 
-# | Data access | Npgsql + Pgvector for .NET |
+From the directory containing the project file, run:
 
-# | Front end | Plain HTML + JavaScript (`EventSource` for SSE) |
+```bash
+dotnet run --urls http://localhost:8080
+```
 
-# | Infrastructure | Docker Compose (pgvector + pgAdmin) |
+Open the application in your browser:
 
-# 
+**http://localhost:8080**
 
-# \## How it works
+Make sure the configured Ollama URL and PostgreSQL connection string match your local environment.
 
-# 
+## Using the API
 
-# This is a \*\*RAG\*\* (Retrieval-Augmented Generation) app. The model never sees your whole PDF. It only sees the few chunks most relevant to your question.
+You can also interact with the chatbot using `curl`.
 
-# 
+### Upload a PDF
 
-# ```
+```bash
+curl -F "file=@docs/Brightpath-Employee-Handbook.pdf" \
+  http://localhost:8080/api/documents
+```
 
-# UPLOAD:  PDF ─► pages ─► \~300-token chunks ─► embeddings ─► pgvector table
+Example response:
 
-# ASK:     question ─► embedding ─► 5 closest chunks ─► prompt with <source> tags ─► gemma4 ─► streamed answer
+```json
+{
+  "file": "Brightpath-Employee-Handbook.pdf",
+  "pages": 3,
+  "chunks": 3
+}
+```
 
-# ```
+The values above illustrate the response format; actual page and chunk counts depend on the uploaded PDF and the chunking configuration.
 
-# 
+### Ask a question
 
-# | Job | Endpoint | Steps |
+```bash
+curl -N -G http://localhost:8080/api/ask \
+  --data-urlencode "question=What is the hotel allowance per night?"
+```
 
-# |---|---|---|
+The `-N` option disables curl's output buffering so streamed responses can be displayed as they arrive.
 
-# | Upload a PDF | `POST /api/documents` | read each page (PdfPig) → split into chunks with overlap → embed (nomic-embed-text) → store in pgvector |
+Example SSE response:
 
-# | Ask a question | `GET /api/ask?question=...` | embed the question → cosine search for the top 5 chunks → wrap them in `<source file page>` tags → stream the answer as SSE |
+```text
+data:{"text":"The hotel allowance is $180 CAD per night"}
 
-# 
+data:{"text":" [Brightpath-Employee-Handbook.pdf, page 3]."}
+```
 
-# \## Project structure
+The example answer is illustrative. The actual response depends on the content of the uploaded documents.
 
-# 
+## Configuration
 
-# ```
+Application settings are stored in `appsettings.json`.
 
-# PdfChatbot/
+Configure the following values according to your environment:
 
-# ├── Program.cs               # Startup: DI registration (Postgres, Ollama), static files, endpoints
+- **PostgreSQL connection string:** Database host, port, database name, and credentials.
+- **Ollama URL:** The address of your local Ollama service.
+- **Chat model:** `gemma4` or another supported Ollama chat model.
+- **Embedding model:** `nomic-embed-text`.
 
-# ├── DocumentEndpoints.cs     # POST /api/documents — read → split → embed → store
+Keep database credentials out of source control when using real credentials. Use environment variables or .NET user secrets where appropriate.
 
-# ├── ChatEndpoints.cs         # GET  /api/ask — retrieve → augment → generate (SSE) + system prompt
+## Troubleshooting
 
-# ├── OllamaClient.cs          # Ollama REST client: /api/embed and streaming /api/chat (NDJSON)
+### Ollama connection errors
 
-# ├── VectorStore.cs           # pgvector table, insert, cosine-similarity search
+- Verify that Ollama is installed and running.
+- Confirm that the configured Ollama URL is correct.
+- Ensure the required chat and embedding models have been pulled.
 
-# ├── Chunker.cs               # Splits text into \~225-word (\~300-token) chunks with 30-word overlap
+### Database connection errors
 
-# ├── wwwroot/index.html       # Upload + chat UI, streams the answer with EventSource
+- Confirm Docker Desktop is running.
+- Check the status of the services with `docker compose ps`.
+- Verify the PostgreSQL connection string and port configuration.
+- Review database logs with:
 
-# ├── appsettings.json         # Connection string, Ollama URL, model names
+```bash
+docker compose logs
+```
 
-# ├── compose.yaml             # pgvector (5432) + pgAdmin (5050)
+### Slow responses
 
-# ├── db/
-
-# │   ├── init.sql             # CREATE EXTENSION vector
-
-# │   └── pgadmin-servers.json # Pre-registers the database in pgAdmin
-
-# └── docs/                    # Fictional sample PDFs for testing
-
-# &#x20;   ├── Brightpath-Employee-Handbook.pdf
-
-# &#x20;   └── Falcon-Office-Supplies-Price-List-Q4-2026.pdf   # contains a hidden prompt-injection attack
-
-# ```
-
-# 
-
-# 
-
-# \## Getting started
-
-# 
-
-# \### Prerequisites
-
-# 
-
-# \- \[.NET 10 SDK](https://dotnet.microsoft.com/download)
-
-# \- \[Ollama](https://ollama.com)
-
-# \- \[Docker Desktop](https://www.docker.com/products/docker-desktop/)
-
-# 
-
-# \### 1. Pull the models
-
-# 
-
-# ```bash
-
-# ollama pull gemma4
-
-# ollama pull nomic-embed-text
-
-# ```
-
-# 
-
-# > \*\*8 GB of RAM or no GPU?\*\* Use a smaller chat model:
-
-# > `ollama pull llama3.2`, then set `"ChatModel": "llama3.2"` in `appsettings.json`.
-
-# 
-
-# \### 2. Start the database and pgAdmin
-
-# 
-
-# ```bash
-
-# docker compose up -d
-
-# ```
-
-# 
-
-# \### 3. Run the app
-
-# 
-
-# ```bash
-
-# dotnet run --urls http://localhost:8080
-
-# ```
-
-# 
-
-# If you run from Visual Studio instead, the app uses the port in `Properties/launchSettings.json`. Check the Output window for `Now listening on: http://localhost:xxxxx`.
-
-# 
-
-# \### 4. Try it
-
-# 
-
-# Open http://localhost:8080, upload a PDF from `docs/`, and ask a question.
-
-# 
-
-# Or use curl:
-
-# 
-
-# ```bash
-
-# curl -F file=@docs/Brightpath-Employee-Handbook.pdf localhost:8080/api/documents
-
-# curl -N -G localhost:8080/api/ask --data-urlencode "question=What is the hotel allowance per night?"
-
-# ```
-
-# 
-
-# Example upload response:
-
-# 
-
-# ```json
-
-# { "file": "Brightpath-Employee-Handbook.pdf", "pages": 3, "chunks": 3 }
-
-# ```
-
-# 
-
-# Example streamed answer (SSE):
-
-# 
-
-# ```
-
-# data:{"text":"The hotel allowance is $180 CAD per night"}
-
-# data:{"text":" \[Brightpath-Employee-Handbook.pdf, page 3]."}
-
-# ```
-
-# 
-
-# 
+- Try a smaller chat model if your machine has limited RAM.
+- Ensure the embedding model is available locally.
+- Remember that response speed depends on your hardware, model size, and document length.
 
